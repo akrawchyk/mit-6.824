@@ -5,6 +5,8 @@ import "net"
 import "os"
 import "net/rpc"
 import "net/http"
+import "time"
+import "fmt"
 
 
 type Master struct {
@@ -48,8 +50,16 @@ func (m *Master) server() {
 func (m *Master) Done() bool {
 	ret := false
 
-	// Your code here.
+	var c chan int
 
+	// Your code here.
+	select {
+	case m := <-c:
+		fmt.Println("waiting...", m)
+	case <-time.After(10 * time.Second):
+		fmt.Println("timed out")
+		ret = true
+	}
 
 	return ret
 }
