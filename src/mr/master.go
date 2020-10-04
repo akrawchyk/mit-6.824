@@ -8,13 +8,22 @@ import "net/http"
 import "time"
 import "fmt"
 
-
 type Master struct {
-	// Your definitions here.
+	// XXX Your definitions here.
 
+	Files []string
+	// storage for each map and reduce task
+	Tasks map[int]struct{ task, status string }
+	// storage for locations and sizes of intermediate output
 }
 
-// Your code here -- RPC handlers for the worker to call.
+// XXX Your code here -- RPC handlers for the worker to call.
+
+func (m *Master) GetTask(args *TaskArgs, reply *TaskReply) error {
+	fmt.Println("master: got task request")
+	reply.File = m.Files[0]
+	return nil
+}
 
 //
 // an example RPC handler.
@@ -25,7 +34,6 @@ func (m *Master) Example(args *ExampleArgs, reply *ExampleReply) error {
 	reply.Y = args.X + 1
 	return nil
 }
-
 
 //
 // start a thread that listens for RPCs from worker.go
@@ -52,12 +60,16 @@ func (m *Master) Done() bool {
 
 	var c chan int
 
-	// Your code here.
+	// XXX Your code here.
+
+	// TODO check if all tasks in storage are in `completed` state
+
+	// added a global timeout
 	select {
 	case m := <-c:
 		fmt.Println("waiting...", m)
-	case <-time.After(10 * time.Second):
-		fmt.Println("timed out")
+	case <-time.After(30 * time.Second):
+		fmt.Println("timed out after 30 seconds")
 		ret = true
 	}
 
@@ -70,10 +82,14 @@ func (m *Master) Done() bool {
 // nReduce is the number of reduce tasks to use.
 //
 func MakeMaster(files []string, nReduce int) *Master {
-	m := Master{}
+	m := Master{Files: files}
 
-	// Your code here.
+	// XXX Your code here.
 
+	// listen for a worker to ask for a task
+	// wait for the worker to finish the task
+	//   or timeout after 10 seconds,
+	//   and we retry task with a different worker
 
 	m.server()
 	return &m

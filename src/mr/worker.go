@@ -1,10 +1,12 @@
 package mr
 
+import "io/ioutil"
+import "os"
 import "fmt"
 import "log"
+import "sort"
 import "net/rpc"
 import "hash/fnv"
-
 
 //
 // Map functions return a slice of KeyValue.
@@ -24,6 +26,12 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
+type ByKey []KeyValue
+
+// for sorting by key.
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 //
 // main/mrworker.go calls this function.
@@ -31,11 +39,51 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	// Your worker implementation here.
+	// XXX Your worker implementation here.
+
+	// TODO
+	// One way to get started is to modify mr/worker.go's Worker()
+	// to send an RPC to the master asking for a task. Then modify
+	// the master to respond with the file name of an
+	// as-yet-unstarted map task. Then modify the worker to read
+	// that file and call the application Map function, as in
+	// mrsequential.go.
+
+	intermediate := []KeyValue{}
+	filename := CallGetTask()
+	file, err := os.Open(filename)
+	if err != nil {
+		log.Fatalf("worker: cannot open %v", filename)
+	}
+	content, err := ioutil.ReadAll(file)
+	if err != nil {
+		log.Fatalf("worker: cannot read %v", filename)
+	}
+
+	file.Close()
+
+	kva := mapf(filename, string(content))
+	intermediate = append(intermediate, kva...)
+
+	sort.Sort(ByKey(intermediate))
+
+	oname := "mr-out-0"
+	ofile, _ := os.Create(oname)
+	ofile.Close()
+
+	log.Println(intermediate)
 
 	// uncomment to send the Example RPC to the master.
-	CallExample()
+	//CallExample()
 
+}
+
+func CallGetTask() string {
+	args := TaskArgs{}
+	reply := TaskReply{}
+	call("Master.GetTask", &args, &reply)
+	fmt.Printf("reply.File %v\n", reply.File)
+	return reply.File
 }
 
 //
