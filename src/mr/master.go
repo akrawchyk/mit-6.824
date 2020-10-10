@@ -11,9 +11,10 @@ import "fmt"
 type Master struct {
 	// XXX Your definitions here.
 
-	Files []string
+	NReduce int
+	Files   []string
 	// storage for each map and reduce task
-	Tasks map[int]struct{ task, status string }
+	//Tasks map[int]struct{ task, status string }
 	// storage for locations and sizes of intermediate output
 }
 
@@ -22,6 +23,7 @@ type Master struct {
 func (m *Master) GetTask(args *TaskArgs, reply *TaskReply) error {
 	fmt.Println("master: got task request")
 	reply.File = m.Files[0]
+	reply.NReduce = 10
 	return nil
 }
 
@@ -82,7 +84,9 @@ func (m *Master) Done() bool {
 // nReduce is the number of reduce tasks to use.
 //
 func MakeMaster(files []string, nReduce int) *Master {
-	m := Master{Files: files}
+	m := Master{Files: files, NReduce: nReduce}
+
+	fmt.Printf("Using %d workers\n", m.NReduce)
 
 	// XXX Your code here.
 

@@ -48,9 +48,12 @@ func Worker(mapf func(string, string) []KeyValue,
 	// as-yet-unstarted map task. Then modify the worker to read
 	// that file and call the application Map function, as in
 	// mrsequential.go.
-
 	intermediate := []KeyValue{}
-	filename := CallGetTask()
+	reply := CallGetTask()
+	fmt.Printf("CallGetTask: %v", reply)
+	filename := reply.File
+	nReduce := reply.NReduce
+	fmt.Printf("%d\n", nReduce)
 	file, err := os.Open(filename)
 	if err != nil {
 		log.Fatalf("worker: cannot open %v", filename)
@@ -67,23 +70,45 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	sort.Sort(ByKey(intermediate))
 
-	oname := "mr-out-0"
-	ofile, _ := os.Create(oname)
-	ofile.Close()
+	// FIXME write to partitions, not chunks over the bucket size
+	//       this way, each reduce worker will collect all of the same
+	//       keys in the files it's assigned
+	// chunk intermediate into buckets
+	chunkSize := (len(intermediate) + nReduce - 1) / nReduce
+	buckets := [][]KeyValue{}
+	for i := 0; i < len(intermediate); i += chunkSize {
+		end := i + chunkSize
 
-	log.Println(intermediate)
+		if end > len(intermediate) {
+			end = len(intermediate)
+		}
 
-	// uncomment to send the Example RPC to the master.
-	//CallExample()
+		buckets = append(buckets, intermediate[i:end])
+	}
+
+	// write to intermediate files
+	for i := 0; i < len(buckets); i++ {
+		// loop over chunk to write a file
+		chunk := buckets[i]
+
+		// TODO get worker number from master
+		oname := fmt.Sprintf("mr-intermediate-%d-%d", 0, i)
+		ofile, _ := os.Create(oname)
+
+		for j := 0; j < len(chunk); j++ {
+			fmt.Fprintf(ofile, "{\"%v\":\"%v\"}\n", chunk[j].Key, chunk[j].Value)
+		}
+
+		ofile.Close()
+	}
 
 }
 
-func CallGetTask() string {
+func CallGetTask() TaskReply {
 	args := TaskArgs{}
 	reply := TaskReply{}
 	call("Master.GetTask", &args, &reply)
-	fmt.Printf("reply.File %v\n", reply.File)
-	return reply.File
+	return reply
 }
 
 //
