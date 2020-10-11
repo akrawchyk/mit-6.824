@@ -70,20 +70,14 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	sort.Sort(ByKey(intermediate))
 
-	// FIXME write to partitions, not chunks over the bucket size
-	//       this way, each reduce worker will collect all of the same
-	//       keys in the files it's assigned
-	// chunk intermediate into buckets
-	chunkSize := (len(intermediate) + nReduce - 1) / nReduce
-	buckets := [][]KeyValue{}
-	for i := 0; i < len(intermediate); i += chunkSize {
-		end := i + chunkSize
+	// partition intermediate into buckets
+	// this way, each reduce worker will collect all of the same
+	// keys in the files it's assigned
+	buckets := make([][]KeyValue, nReduce)
 
-		if end > len(intermediate) {
-			end = len(intermediate)
-		}
-
-		buckets = append(buckets, intermediate[i:end])
+	for i := 0; i < len(intermediate); i++ {
+		bucket := ihash(intermediate[i].Key) % nReduce
+		buckets[bucket] = append(buckets[bucket], intermediate[i])
 	}
 
 	// write to intermediate files

@@ -64,7 +64,9 @@ func (m *Master) Done() bool {
 
 	// XXX Your code here.
 
-	// TODO check if all tasks in storage are in `completed` state
+	// TODO need to make work queue for all map tasks (e.g. files)
+	// TODO need to synchronize on all map tasks completed
+	// TODO then can start reduce phase
 
 	// added a global timeout
 	select {
