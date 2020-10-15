@@ -7,6 +7,7 @@ import "log"
 import "net/rpc"
 import "hash/fnv"
 import "encoding/json"
+import "strconv"
 
 //
 // Map functions return a slice of KeyValue.
@@ -40,25 +41,43 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	// XXX Your worker implementation here.
-	intermediate := []KeyValue{}
 	reply := CallGetTask()
 	fmt.Printf("CallGetTask: %v", reply)
 
+	taskType := reply.TaskType
 	taskId := reply.TaskId
-	filename := reply.File
-	nReduce := reply.NReduce
-	fmt.Printf("%d\n", nReduce)
+
+	if taskType == "Map" {
+		nReduce, _ := strconv.Atoi(reply.Args[0])
+		filename := reply.Args[1]
+		out := MapWorker(mapf, filename, nReduce, taskId)
+		CallCompleteTask(out)
+		fmt.Printf("CallCompleteTask: %v\n", reply)
+	} else if taskType == "Reduce" {
+		filenames := reply.Args
+		fmt.Printf("filenames: %v", filenames)
+		out := ReduceWorker(reducef, filenames)
+		CallCompleteTask(out)
+	} else {
+		fmt.Printf("unexpected task type %v\n", taskType)
+		// TODO send task failed rpc?
+	}
+
+}
+
+func MapWorker(mapf func(string, string) []KeyValue, filename string, nReduce int, taskId string) []string {
 	file, err := os.Open(filename)
 	if err != nil {
-		log.Fatalf("worker: cannot open %v", filename)
+		log.Fatalf("cannot open %v", filename)
 	}
 	content, err := ioutil.ReadAll(file)
 	if err != nil {
-		log.Fatalf("worker: cannot read %v", filename)
+		log.Fatalf("cannot read %v", filename)
 	}
 
 	file.Close()
 
+	intermediate := []KeyValue{}
 	kva := mapf(filename, string(content))
 	intermediate = append(intermediate, kva...)
 
@@ -85,16 +104,52 @@ func Worker(mapf func(string, string) []KeyValue,
 		for _, kv := range chunk {
 			err := enc.Encode(&kv)
 			if err != nil {
-				log.Fatalf("worker: cannot write intermediate output to %v", oname)
+				log.Fatalf("cannot write intermediate output to %v", oname)
 			}
 		}
 
 		out = append(out, oname)
 		ofile.Close()
+		fmt.Printf("wrote intermediate output %v\n", oname)
 	}
 
-	CallCompleteTask(out)
-	fmt.Printf("CallCompleteTask: %v\n", reply)
+	return out
+}
+
+func ReduceWorker(reducef func(string, []string) string, filenames []string) []string {
+	var kva []KeyValue
+	// read all files
+	for i:= 0; i < len(filenames); i++ {
+		filename := filenames[i]
+		file, err := os.Open(filename)
+		if err != nil {
+			log.Fatalf("cannot open %v", filename)
+		}
+		dec := json.NewDecoder(file)
+		for {
+			var kv KeyValue
+			if err := dec.Decode(&kv); err != nil {
+				break
+			}
+			kva = append(kva, kv)
+		}
+
+		if err != nil {
+			log.Fatalf("cannot read %v", filename)
+		}
+
+		file.Close()
+	}
+
+	fmt.Printf("%v\n", kva)
+	// sort them by key
+	//sort.Sort(ByKey(intermediate))
+	// pass all of the same key to the reducer
+	// collect output of reducer
+
+	out := []string{"not implemented"}
+
+	return out
 }
 
 func CallGetTask() TaskReply {

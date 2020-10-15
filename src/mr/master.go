@@ -12,6 +12,7 @@ import "sync"
 import "strings"
 
 type Task struct {
+	Id string
 	Type string
 	Args []string
 }
@@ -32,9 +33,17 @@ var tg sync.WaitGroup
 
 func (m *Master) GetTask(args *TaskArgs, reply *TaskReply) error {
 	task := <-taskChan
-	reply.TaskId = task.Args[0]
-	reply.File = task.Args[1]
-	reply.NReduce = m.NReduce
+	// TODO put task on in-progress list and re-add it to the taskChan if it isn't removed in x time
+	reply.TaskType = task.Type
+	reply.TaskId = task.Id
+
+	if task.Type == "Map" {
+		reply.Args = []string{strconv.Itoa(m.NReduce), task.Args[0]}
+	} else if task.Type == "Reduce" {
+		reply.Args = task.Args
+	} else {
+		fmt.Printf("unexpected task type %v\n", task.Type)
+	}
 	fmt.Println("got task request")
 	return nil
 }
@@ -128,10 +137,10 @@ func MakeMaster(files []string, nReduce int) *Master {
 		// add Map tasks, 1 per file to the work queue
 		fmt.Printf("map input: %v\n", files)
 		for i := 0; i < len(files); i++ {
-			task := Task{Type: "Map", Args: []string{strconv.Itoa(i), files[i]}}
+			mTask := Task{Type: "Map", Id: strconv.Itoa(i), Args: []string{files[i]}}
 			tg.Add(1)
-			taskChan <- task
-			fmt.Printf("queue map job: %v\n", files[i])
+			taskChan <- mTask
+			fmt.Printf("queue map job: %v\n", mTask)
 		}
 
 		tg.Wait()
@@ -145,10 +154,10 @@ func MakeMaster(files []string, nReduce int) *Master {
 			reduceFiles := Filter(m.IntermediateFiles, func(str string) bool {
 				return strings.HasSuffix(str, strconv.Itoa(i))
 			})
-			task := Task{Type: "Reduce", Args: reduceFiles}
+			rTask := Task{Type: "Reduce", Id: strconv.Itoa(i), Args: reduceFiles}
 			tg.Add(1)
-			taskChan <- task
-			fmt.Printf("queue reduce job: %v\n", reduceFiles)
+			taskChan <- rTask
+			fmt.Printf("queue reduce job: %v\n", rTask)
 		}
 
 		tg.Wait()

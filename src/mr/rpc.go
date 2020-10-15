@@ -29,9 +29,9 @@ type TaskArgs struct {
 }
 
 type TaskReply struct {
+	TaskType string
 	TaskId  string
-	File    string
-	NReduce int
+	Args    []string
 }
 
 // Cook up a unique-ish UNIX-domain socket name
