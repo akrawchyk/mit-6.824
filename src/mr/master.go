@@ -162,6 +162,8 @@ func MakeMaster(files []string, nReduce int) *Master {
 
 		tg.Wait()
 		wg.Done() // reduce phase done
+
+		fmt.Println("finished reduce phase")
 	}()
 	// on worker get task, remove task from idle Map queue, and add it to in-progress worker queue
 	// when worker completes, it sends back results

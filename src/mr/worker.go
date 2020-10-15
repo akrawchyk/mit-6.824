@@ -8,6 +8,7 @@ import "net/rpc"
 import "hash/fnv"
 import "encoding/json"
 import "strconv"
+import "sort"
 
 //
 // Map functions return a slice of KeyValue.
@@ -56,7 +57,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	} else if taskType == "Reduce" {
 		filenames := reply.Args
 		fmt.Printf("filenames: %v", filenames)
-		out := ReduceWorker(reducef, filenames)
+		out := ReduceWorker(reducef, filenames, taskId)
 		CallCompleteTask(out)
 	} else {
 		fmt.Printf("unexpected task type %v\n", taskType)
@@ -116,8 +117,8 @@ func MapWorker(mapf func(string, string) []KeyValue, filename string, nReduce in
 	return out
 }
 
-func ReduceWorker(reducef func(string, []string) string, filenames []string) []string {
-	var kva []KeyValue
+func ReduceWorker(reducef func(string, []string) string, filenames []string, taskId string) []string {
+	var intermediate []KeyValue
 	// read all files
 	for i:= 0; i < len(filenames); i++ {
 		filename := filenames[i]
@@ -131,7 +132,7 @@ func ReduceWorker(reducef func(string, []string) string, filenames []string) []s
 			if err := dec.Decode(&kv); err != nil {
 				break
 			}
-			kva = append(kva, kv)
+			intermediate = append(intermediate, kv)
 		}
 
 		if err != nil {
@@ -141,14 +142,37 @@ func ReduceWorker(reducef func(string, []string) string, filenames []string) []s
 		file.Close()
 	}
 
-	fmt.Printf("%v\n", kva)
 	// sort them by key
-	//sort.Sort(ByKey(intermediate))
-	// pass all of the same key to the reducer
-	// collect output of reducer
+	sort.Sort(ByKey(intermediate))
 
-	out := []string{"not implemented"}
+	oname := fmt.Sprintf("mr-out-%v", taskId)
+	ofile, _ := os.Create(oname)
 
+	//
+	// call Reduce on each distinct key in intermediate[],
+	// and print the result to mr-out-0.
+	//
+	i := 0
+	for i < len(intermediate) {
+		j := i + 1
+		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
+			j++
+		}
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, intermediate[k].Value)
+		}
+		output := reducef(intermediate[i].Key, values)
+
+		// this is the correct format for each line of Reduce output.
+		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
+
+		i = j
+	}
+
+	ofile.Close()
+
+	out := []string{oname}
 	return out
 }
 
