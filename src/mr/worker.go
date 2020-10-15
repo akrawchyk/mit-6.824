@@ -4,9 +4,9 @@ import "io/ioutil"
 import "os"
 import "fmt"
 import "log"
-import "sort"
 import "net/rpc"
 import "hash/fnv"
+import "encoding/json"
 
 //
 // Map functions return a slice of KeyValue.
@@ -68,8 +68,6 @@ func Worker(mapf func(string, string) []KeyValue,
 	kva := mapf(filename, string(content))
 	intermediate = append(intermediate, kva...)
 
-	sort.Sort(ByKey(intermediate))
-
 	// partition intermediate into buckets
 	// this way, each reduce worker will collect all of the same
 	// keys in the files it's assigned
@@ -88,10 +86,18 @@ func Worker(mapf func(string, string) []KeyValue,
 		// TODO get worker number from master
 		oname := fmt.Sprintf("mr-intermediate-%d-%d", 0, i)
 		ofile, _ := os.Create(oname)
+		enc := json.NewEncoder(ofile)
 
-		for j := 0; j < len(chunk); j++ {
-			fmt.Fprintf(ofile, "{\"%v\":\"%v\"}\n", chunk[j].Key, chunk[j].Value)
+		for _, kv := range chunk {
+			err := enc.Encode(&kv)
+			if err != nil {
+				log.Fatalf("worker: cannot write intermediate output to %v", oname)
+			}
 		}
+
+		//for j := 0; j < len(chunk); j++ {
+		//fmt.Fprintf(ofile, "{\"%v\":\"%v\"}\n", chunk[j].Key, chunk[j].Value)
+		//}
 
 		ofile.Close()
 	}
