@@ -43,6 +43,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	intermediate := []KeyValue{}
 	reply := CallGetTask()
 	fmt.Printf("CallGetTask: %v", reply)
+
 	taskId := reply.TaskId
 	filename := reply.File
 	nReduce := reply.NReduce
