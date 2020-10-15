@@ -7,23 +7,38 @@ import "net/rpc"
 import "net/http"
 import "time"
 import "fmt"
+import "strconv"
+
+type Task struct {
+	Type string
+	Args []string
+}
 
 type Master struct {
 	// XXX Your definitions here.
 
 	NReduce int
 	Files   []string
-	// storage for each map and reduce task
-	//Tasks map[int]struct{ task, status string }
-	// storage for locations and sizes of intermediate output
 }
+
+var mapChan = make(chan Task)
 
 // XXX Your code here -- RPC handlers for the worker to call.
 
 func (m *Master) GetTask(args *TaskArgs, reply *TaskReply) error {
+	// TODO take Task off mapChan and pass to File instead?
 	fmt.Println("master: got task request")
-	reply.File = m.Files[0]
-	reply.NReduce = 10
+	task := <-mapChan
+	reply.TaskId = task.Args[0]
+	reply.File = task.Args[1]
+	reply.NReduce = m.NReduce
+	return nil
+}
+
+func (m *Master) CompleteTask(args *TaskArgs, reply *TaskReply) error {
+	fmt.Println("master: got task complete")
+	fmt.Printf("complete args: %v\n", args.Files)
+	// wg.Done()
 	return nil
 }
 
@@ -50,6 +65,7 @@ func (m *Master) server() {
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
+	fmt.Printf("listening on %v\n", sockname)
 	go http.Serve(l, nil)
 }
 
@@ -74,6 +90,7 @@ func (m *Master) Done() bool {
 		fmt.Println("waiting...", m)
 	case <-time.After(30 * time.Second):
 		fmt.Println("timed out after 30 seconds")
+		close(mapChan)
 		ret = true
 	}
 
@@ -86,16 +103,28 @@ func (m *Master) Done() bool {
 // nReduce is the number of reduce tasks to use.
 //
 func MakeMaster(files []string, nReduce int) *Master {
-	m := Master{Files: files, NReduce: nReduce}
-
-	fmt.Printf("Using %d workers\n", m.NReduce)
-
 	// XXX Your code here.
 
-	// listen for a worker to ask for a task
-	// wait for the worker to finish the task
-	//   or timeout after 10 seconds,
-	//   and we retry task with a different worker
+	// add Map tasks, 1 per file to the work queue
+	go func() {
+		fmt.Printf("%v", files)
+		for i := 0; i < len(files); i++ {
+			task := Task{Type: "Map", Args: []string{strconv.Itoa(i), files[i]}}
+			// TODO add wait groups to these tasks so they are decremented when completed
+			// wg.Add(1)
+			mapChan <- task
+			fmt.Println("queue job")
+		}
+	}()
+
+	m := Master{Files: files, NReduce: nReduce}
+
+	// on worker get task, remove task from idle Map queue, and add it to in-progress worker queue
+	// when worker completes, it sends back results
+	// on worker complete, remove task from in-progress queue, and add it to the completed queue
+	// sync on all the Map tasks finishing
+	// add Reduce tasks, 1 per nBuckets to the idle Reduce queue
+	// ...tbd
 
 	m.server()
 	return &m

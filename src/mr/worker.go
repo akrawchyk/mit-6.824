@@ -51,6 +51,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	intermediate := []KeyValue{}
 	reply := CallGetTask()
 	fmt.Printf("CallGetTask: %v", reply)
+	taskId := reply.TaskId
 	filename := reply.File
 	nReduce := reply.NReduce
 	fmt.Printf("%d\n", nReduce)
@@ -78,13 +79,14 @@ func Worker(mapf func(string, string) []KeyValue,
 		buckets[bucket] = append(buckets[bucket], intermediate[i])
 	}
 
+	out := make([]string, nReduce)
 	// write to intermediate files
 	for i := 0; i < len(buckets); i++ {
 		// loop over chunk to write a file
 		chunk := buckets[i]
 
 		// TODO get worker number from master
-		oname := fmt.Sprintf("mr-intermediate-%d-%d", 0, i)
+		oname := fmt.Sprintf("mr-intermediate-%v-%v", taskId, i)
 		ofile, _ := os.Create(oname)
 		enc := json.NewEncoder(ofile)
 
@@ -95,19 +97,25 @@ func Worker(mapf func(string, string) []KeyValue,
 			}
 		}
 
-		//for j := 0; j < len(chunk); j++ {
-		//fmt.Fprintf(ofile, "{\"%v\":\"%v\"}\n", chunk[j].Key, chunk[j].Value)
-		//}
-
+		out = append(out, oname)
 		ofile.Close()
 	}
 
+	CallCompleteTask(out)
+	fmt.Printf("CallCompleteTask: %v\n", reply)
 }
 
 func CallGetTask() TaskReply {
 	args := TaskArgs{}
 	reply := TaskReply{}
 	call("Master.GetTask", &args, &reply)
+	return reply
+}
+
+func CallCompleteTask(out []string) TaskReply {
+	args := TaskArgs{Files: out}
+	reply := TaskReply{}
+	call("Master.CompleteTask", &args, &reply)
 	return reply
 }
 

@@ -25,9 +25,11 @@ type ExampleReply struct {
 // XXX Add your RPC definitions here.
 
 type TaskArgs struct {
+	Files []string
 }
 
 type TaskReply struct {
+	TaskId  string
 	File    string
 	NReduce int
 }
