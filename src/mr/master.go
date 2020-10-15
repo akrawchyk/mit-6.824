@@ -8,6 +8,7 @@ import "net/http"
 import "time"
 import "fmt"
 import "strconv"
+import "sync"
 
 type Task struct {
 	Type string
@@ -21,13 +22,13 @@ type Master struct {
 	Files   []string
 }
 
-var mapChan = make(chan Task)
+var mapChan = make(chan Task, 10)
+var wg sync.WaitGroup
 
 // XXX Your code here -- RPC handlers for the worker to call.
 
 func (m *Master) GetTask(args *TaskArgs, reply *TaskReply) error {
-	// TODO take Task off mapChan and pass to File instead?
-	fmt.Println("master: got task request")
+	fmt.Println("got task request")
 	task := <-mapChan
 	reply.TaskId = task.Args[0]
 	reply.File = task.Args[1]
@@ -36,9 +37,9 @@ func (m *Master) GetTask(args *TaskArgs, reply *TaskReply) error {
 }
 
 func (m *Master) CompleteTask(args *TaskArgs, reply *TaskReply) error {
-	fmt.Println("master: got task complete")
+	fmt.Println("got task complete")
 	fmt.Printf("complete args: %v\n", args.Files)
-	// wg.Done()
+	wg.Done()
 	return nil
 }
 
@@ -75,19 +76,18 @@ func (m *Master) server() {
 //
 func (m *Master) Done() bool {
 	ret := false
+	c := make(chan int)
 
-	var c chan int
+	go func() {
+		wg.Wait()
+		close(c)
+	}()
 
-	// XXX Your code here.
-
-	// TODO need to make work queue for all map tasks (e.g. files)
-	// TODO need to synchronize on all map tasks completed
-	// TODO then can start reduce phase
-
-	// added a global timeout
 	select {
-	case m := <-c:
-		fmt.Println("waiting...", m)
+	case <-c:
+		fmt.Println("finished")
+		close(mapChan)
+		ret = true
 	case <-time.After(30 * time.Second):
 		fmt.Println("timed out after 30 seconds")
 		close(mapChan)
@@ -100,21 +100,27 @@ func (m *Master) Done() bool {
 //
 // create a Master.
 // main/mrmaster.go calls this function.
-// nReduce is the number of reduce tasks to use.
 //
 func MakeMaster(files []string, nReduce int) *Master {
 	// XXX Your code here.
 
 	// add Map tasks, 1 per file to the work queue
 	go func() {
-		fmt.Printf("%v", files)
+		fmt.Printf("map input: %v\n", files)
 		for i := 0; i < len(files); i++ {
 			task := Task{Type: "Map", Args: []string{strconv.Itoa(i), files[i]}}
-			// TODO add wait groups to these tasks so they are decremented when completed
-			// wg.Add(1)
+			wg.Add(1)
 			mapChan <- task
-			fmt.Println("queue job")
+			fmt.Printf("queue map job: %v\n", files[i])
 		}
+
+		wg.Wait()
+
+		fmt.Println("finished map phase")
+		// FIXME dont exit after map is complete, wait on another group of reduce tasks
+
+		// TODO collect map output and create reduce tasks with them
+		// TODO send reduce jobs to channel
 	}()
 
 	m := Master{Files: files, NReduce: nReduce}

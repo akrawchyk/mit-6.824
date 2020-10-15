@@ -40,14 +40,6 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	// XXX Your worker implementation here.
-
-	// TODO
-	// One way to get started is to modify mr/worker.go's Worker()
-	// to send an RPC to the master asking for a task. Then modify
-	// the master to respond with the file name of an
-	// as-yet-unstarted map task. Then modify the worker to read
-	// that file and call the application Map function, as in
-	// mrsequential.go.
 	intermediate := []KeyValue{}
 	reply := CallGetTask()
 	fmt.Printf("CallGetTask: %v", reply)
@@ -85,7 +77,6 @@ func Worker(mapf func(string, string) []KeyValue,
 		// loop over chunk to write a file
 		chunk := buckets[i]
 
-		// TODO get worker number from master
 		oname := fmt.Sprintf("mr-intermediate-%v-%v", taskId, i)
 		ofile, _ := os.Create(oname)
 		enc := json.NewEncoder(ofile)
