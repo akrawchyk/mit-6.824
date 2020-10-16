@@ -144,9 +144,9 @@ func MakeMaster(files []string, nReduce int) *Master {
 		}
 
 		tg.Wait()
+		fmt.Println("finished map phase")
 		wg.Done() // map phase done
 
-		fmt.Println("finished map phase")
 		// FIXME dont exit after map is complete, wait on another group of reduce tasks
 
 		// collect map output and create reduce tasks with them
@@ -161,9 +161,8 @@ func MakeMaster(files []string, nReduce int) *Master {
 		}
 
 		tg.Wait()
-		wg.Done() // reduce phase done
-
 		fmt.Println("finished reduce phase")
+		wg.Done() // reduce phase done
 	}()
 	// on worker get task, remove task from idle Map queue, and add it to in-progress worker queue
 	// when worker completes, it sends back results

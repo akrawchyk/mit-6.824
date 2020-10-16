@@ -9,6 +9,7 @@ import "hash/fnv"
 import "encoding/json"
 import "strconv"
 import "sort"
+import "errors"
 
 //
 // Map functions return a slice of KeyValue.
@@ -42,28 +43,37 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	// XXX Your worker implementation here.
-	reply := CallGetTask()
-	fmt.Printf("CallGetTask: %v", reply)
+	// loop over this until there's a failed rpc call
+	for {
+		reply, err := CallGetTask()
 
-	taskType := reply.TaskType
-	taskId := reply.TaskId
+		if err != nil {
+			fmt.Println(err)
+			break
+		}
 
-	if taskType == "Map" {
-		nReduce, _ := strconv.Atoi(reply.Args[0])
-		filename := reply.Args[1]
-		out := MapWorker(mapf, filename, nReduce, taskId)
-		CallCompleteTask(out)
-		fmt.Printf("CallCompleteTask: %v\n", reply)
-	} else if taskType == "Reduce" {
-		filenames := reply.Args
-		fmt.Printf("filenames: %v", filenames)
-		out := ReduceWorker(reducef, filenames, taskId)
-		CallCompleteTask(out)
-	} else {
-		fmt.Printf("unexpected task type %v\n", taskType)
-		// TODO send task failed rpc?
+		fmt.Printf("CallGetTask: %v", reply)
+
+		taskType := reply.TaskType
+		taskId := reply.TaskId
+
+		if taskType == "Map" {
+			nReduce, _ := strconv.Atoi(reply.Args[0])
+			filename := reply.Args[1]
+			out := MapWorker(mapf, filename, nReduce, taskId)
+			CallCompleteTask(out)
+			fmt.Printf("CallCompleteTask: %v\n", reply)
+		} else if taskType == "Reduce" {
+			filenames := reply.Args
+			fmt.Printf("filenames: %v", filenames)
+			out := ReduceWorker(reducef, filenames, taskId)
+			CallCompleteTask(out)
+		} else {
+			fmt.Printf("unexpected task type %v\n", taskType)
+			break
+			// TODO send task failed rpc?
+		}
 	}
-
 }
 
 func MapWorker(mapf func(string, string) []KeyValue, filename string, nReduce int, taskId string) []string {
@@ -176,11 +186,16 @@ func ReduceWorker(reducef func(string, []string) string, filenames []string, tas
 	return out
 }
 
-func CallGetTask() TaskReply {
+func CallGetTask() (TaskReply, error) {
 	args := TaskArgs{}
 	reply := TaskReply{}
-	call("Master.GetTask", &args, &reply)
-	return reply
+	ok := call("Master.GetTask", &args, &reply)
+
+	if !ok {
+		return reply, errors.New("no response from master")
+	}
+
+	return reply, nil
 }
 
 func CallCompleteTask(out []string) TaskReply {
