@@ -12,7 +12,7 @@ import "sync"
 import "strings"
 
 type Task struct {
-	Id string
+	Id   string
 	Type string
 	Args []string
 }
@@ -23,6 +23,9 @@ type Master struct {
 	NReduce           int
 	Files             []string
 	IntermediateFiles []string
+	TasksInProgress   map[string]Task
+	TasksCompleted    map[string]bool
+	mux               sync.Mutex
 }
 
 var taskChan = make(chan Task, 10)
@@ -33,9 +36,33 @@ var tg sync.WaitGroup
 
 func (m *Master) GetTask(args *TaskArgs, reply *TaskReply) error {
 	task := <-taskChan
-	// TODO put task on in-progress list and re-add it to the taskChan if it isn't removed in x time
 	reply.TaskType = task.Type
 	reply.TaskId = task.Id
+
+	m.mux.Lock()
+	if _, ok := m.TasksInProgress[task.Id]; ok {
+		fmt.Printf("warning, task %v already in progress\n", task.Id)
+	} else {
+		m.TasksInProgress[task.Id] = task
+	}
+	m.mux.Unlock()
+
+	go func() {
+		select {
+		case <-time.After(10 * time.Second):
+			fmt.Printf("task %v timed out after 10 seconds\n", task.Id)
+			m.mux.Lock()
+			delete(m.TasksInProgress, task.Id)
+
+			if _, ok := m.TasksCompleted[task.Id]; ok {
+				fmt.Printf("task %v already completed\n", task.Id)
+			} else {
+				retryTask := Task{Type: task.Type, Id: task.Id, Args: task.Args}
+				taskChan <- retryTask
+			}
+			m.mux.Unlock()
+		}
+	}()
 
 	if task.Type == "Map" {
 		reply.Args = []string{strconv.Itoa(m.NReduce), task.Args[0]}
@@ -51,7 +78,18 @@ func (m *Master) GetTask(args *TaskArgs, reply *TaskReply) error {
 func (m *Master) CompleteTask(args *TaskArgs, reply *TaskReply) error {
 	fmt.Println("got task complete")
 	fmt.Printf("complete args: %v\n", args.Files)
+	taskId := args.TaskId
 	m.IntermediateFiles = append(m.IntermediateFiles, args.Files...)
+
+	m.mux.Lock()
+	if _, ok := m.TasksInProgress[taskId]; ok {
+		delete(m.TasksInProgress, taskId)
+		m.TasksCompleted[taskId] = true
+	} else {
+		fmt.Printf("warning, unknown complete task %v\n", taskId)
+	}
+	m.mux.Unlock()
+
 	tg.Done()
 	return nil
 }
@@ -99,10 +137,11 @@ func (m *Master) Done() bool {
 	select {
 	case <-c:
 		fmt.Println("finished")
+		fmt.Printf("%#v\n", m.TasksInProgress)
 		close(taskChan)
 		ret = true
-	case <-time.After(30 * time.Second):
-		fmt.Println("timed out after 30 seconds")
+	case <-time.After(60 * time.Second):
+		fmt.Println("timed out after 60 seconds")
 		close(taskChan)
 		ret = true
 	}
@@ -128,7 +167,7 @@ func Filter(s []string, fn func(string) bool) []string {
 // main/mrmaster.go calls this function.
 //
 func MakeMaster(files []string, nReduce int) *Master {
-	m := Master{Files: files, NReduce: nReduce}
+	m := Master{Files: files, NReduce: nReduce, TasksInProgress: map[string]Task{}, TasksCompleted: map[string]bool{}}
 
 	// XXX Your code here.
 	wg.Add(2) // two phases: map and reduce
@@ -137,7 +176,7 @@ func MakeMaster(files []string, nReduce int) *Master {
 		// add Map tasks, 1 per file to the work queue
 		fmt.Printf("map input: %v\n", files)
 		for i := 0; i < len(files); i++ {
-			mTask := Task{Type: "Map", Id: strconv.Itoa(i), Args: []string{files[i]}}
+			mTask := Task{Type: "Map", Id: fmt.Sprintf("Map%d", i), Args: []string{files[i]}}
 			tg.Add(1)
 			taskChan <- mTask
 			fmt.Printf("queue map job: %v\n", mTask)
@@ -154,7 +193,7 @@ func MakeMaster(files []string, nReduce int) *Master {
 			reduceFiles := Filter(m.IntermediateFiles, func(str string) bool {
 				return strings.HasSuffix(str, strconv.Itoa(i))
 			})
-			rTask := Task{Type: "Reduce", Id: strconv.Itoa(i), Args: reduceFiles}
+			rTask := Task{Type: "Reduce", Id: fmt.Sprintf("Reduce%d", i), Args: reduceFiles}
 			tg.Add(1)
 			taskChan <- rTask
 			fmt.Printf("queue reduce job: %v\n", rTask)

@@ -52,7 +52,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			break
 		}
 
-		fmt.Printf("CallGetTask: %v", reply)
+		fmt.Printf("CallGetTask: %v\n", reply)
 
 		taskType := reply.TaskType
 		taskId := reply.TaskId
@@ -61,17 +61,16 @@ func Worker(mapf func(string, string) []KeyValue,
 			nReduce, _ := strconv.Atoi(reply.Args[0])
 			filename := reply.Args[1]
 			out := MapWorker(mapf, filename, nReduce, taskId)
-			CallCompleteTask(out)
+			CallCompleteTask(out, taskId)
 			fmt.Printf("CallCompleteTask: %v\n", reply)
 		} else if taskType == "Reduce" {
 			filenames := reply.Args
 			fmt.Printf("filenames: %v", filenames)
 			out := ReduceWorker(reducef, filenames, taskId)
-			CallCompleteTask(out)
+			CallCompleteTask(out, taskId)
 		} else {
 			fmt.Printf("unexpected task type %v\n", taskType)
 			break
-			// TODO send task failed rpc?
 		}
 	}
 }
@@ -130,7 +129,7 @@ func MapWorker(mapf func(string, string) []KeyValue, filename string, nReduce in
 func ReduceWorker(reducef func(string, []string) string, filenames []string, taskId string) []string {
 	var intermediate []KeyValue
 	// read all files
-	for i:= 0; i < len(filenames); i++ {
+	for i := 0; i < len(filenames); i++ {
 		filename := filenames[i]
 		file, err := os.Open(filename)
 		if err != nil {
@@ -198,8 +197,8 @@ func CallGetTask() (TaskReply, error) {
 	return reply, nil
 }
 
-func CallCompleteTask(out []string) TaskReply {
-	args := TaskArgs{Files: out}
+func CallCompleteTask(out []string, taskId string) TaskReply {
+	args := TaskArgs{Files: out, TaskId: taskId}
 	reply := TaskReply{}
 	call("Master.CompleteTask", &args, &reply)
 	return reply
