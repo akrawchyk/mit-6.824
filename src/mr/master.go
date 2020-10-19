@@ -79,9 +79,10 @@ func (m *Master) CompleteTask(args *TaskArgs, reply *TaskReply) error {
 	fmt.Println("got task complete")
 	fmt.Printf("complete args: %v\n", args.Files)
 	taskId := args.TaskId
-	m.IntermediateFiles = append(m.IntermediateFiles, args.Files...)
 
 	m.mux.Lock()
+	m.IntermediateFiles = append(m.IntermediateFiles, args.Files...)
+
 	if _, ok := m.TasksInProgress[taskId]; ok {
 		delete(m.TasksInProgress, taskId)
 		m.TasksCompleted[taskId] = true
